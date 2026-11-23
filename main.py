@@ -171,14 +171,18 @@ class WarehouseSimulation:
         elif action.startswith("request_"):
             container_type = action.removeprefix("request_")
             for _ in range(2):
-                self.master_ai.add_outbound_order(container_type)
+                self.master_ai.add_outbound_order(
+                    container_type, self.warehouse_map
+                )
         elif action == "stress":
             for _ in range(10):
                 container_type = self.random.choice(CONTAINER_TYPES)
                 if self.random.random() < 0.5:
                     self.master_ai.add_inbound_order(container_type)
                 else:
-                    self.master_ai.add_outbound_order(container_type)
+                    self.master_ai.add_outbound_order(
+                        container_type, self.warehouse_map
+                    )
         elif action == "speed":
             self.speed_index = (self.speed_index + 1) % len(self.speed_options)
         elif action == "pause":
@@ -247,8 +251,9 @@ class WarehouseSimulation:
             self.small_font,
         )
         self._draw_text(
-            f"Queues: inbound {len(self.master_ai.inbound_orders)}  |  "
-            f"outbound {len(self.master_ai.outbound_orders)}",
+            f"Queues: in {len(self.master_ai.inbound_orders)}  |  "
+            f"ready {len(self.master_ai.outbound_orders)}  |  "
+            f"stock wait {len(self.master_ai.waiting_outbound_orders)}",
             panel_x + 18,
             stats_y + 51,
             self.small_font,

@@ -30,6 +30,7 @@ class MasterAI:
     def __init__(self) -> None:
         self.inbound_orders: deque[str] = deque()
         self.outbound_orders: deque[str] = deque()
+        self.waiting_outbound_orders: deque[str] = deque()
 
         self.completed_inbound = 0
         self.completed_outbound = 0
@@ -48,9 +49,14 @@ class MasterAI:
         """Queue a container that has arrived at the inbound dock."""
         self.inbound_orders.append(container_type)
 
-    def add_outbound_order(self, container_type: str) -> None:
-        """Queue a request for a container type."""
-        self.outbound_orders.append(container_type)
+    def add_outbound_order(
+        self, container_type: str, warehouse_map: WarehouseMap
+    ) -> None:
+        """Queue a request as ready or waiting according to current shelf stock."""
+        if self._has_available_shelf(container_type, warehouse_map):
+            self.outbound_orders.append(container_type)
+        else:
+            self.waiting_outbound_orders.append(container_type)
 
     @staticmethod
     def compute_path(
@@ -191,6 +197,8 @@ class MasterAI:
                     self._total_completed_task_ticks / self._completed_task_count
                 )
                 self._reserved_shelves.discard(task.shelf)
+                if task.direction == "inbound":
+                    self._promote_waiting_outbound_orders(warehouse_map)
                 self._release_goal(robot, task.dropoff_goal)
                 self._assign_return_path(robot, task, robots, warehouse_map)
 
@@ -362,6 +370,7 @@ class MasterAI:
         robots: list[Robot],
         warehouse_map: WarehouseMap,
     ) -> bool:
+        self._move_unavailable_outbound_orders(warehouse_map)
         if not self.outbound_orders:
             return False
 
@@ -423,6 +432,37 @@ class MasterAI:
         )
         self._reserve_goals(robot, shelf_access, dock)
         return True
+
+    def _has_available_shelf(
+        self, container_type: str, warehouse_map: WarehouseMap
+    ) -> bool:
+        return any(
+            shelf not in self._reserved_shelves
+            and warehouse_map.storage[shelf[1]][shelf[0]] == container_type
+            for shelf in warehouse_map.shelf_cells
+        )
+
+    def _promote_waiting_outbound_orders(
+        self, warehouse_map: WarehouseMap
+    ) -> None:
+        waiting_orders = self.waiting_outbound_orders
+        self.waiting_outbound_orders = deque()
+        for container_type in waiting_orders:
+            if self._has_available_shelf(container_type, warehouse_map):
+                self.outbound_orders.append(container_type)
+            else:
+                self.waiting_outbound_orders.append(container_type)
+
+    def _move_unavailable_outbound_orders(
+        self, warehouse_map: WarehouseMap
+    ) -> None:
+        outbound_orders = self.outbound_orders
+        self.outbound_orders = deque()
+        for container_type in outbound_orders:
+            if self._has_available_shelf(container_type, warehouse_map):
+                self.outbound_orders.append(container_type)
+            else:
+                self.waiting_outbound_orders.append(container_type)
 
     @staticmethod
     def _bfs_tree(
